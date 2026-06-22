@@ -1,0 +1,131 @@
+{
+  "theme_and_archetype": {
+    "theme": "Light",
+    "archetype": "4 (Swiss & High-Contrast) with Vibrant Accents",
+    "reasoning": "For a GovTech/Corporate SaaS managing official minutes (atas), high authority and clarity are non-negotiable. Archetype 4 provides the structural, objective 'Swiss' grid needed for document editing and dashboarding. However, to meet the 'moderno com toques vibrantes' requirement and highlight the 'WOW' AI transcription feature, we inject extreme high-contrast vibrant accents (Electric Coral for recording, Azure Blue for primary actions) against stark white/grey backgrounds."
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Cabinet Grotesk, sans-serif",
+      "weights": ["800", "500"],
+      "usage": "Use font-black (800) for North Star metrics and H1s. Use tight letter spacing (tracking-tight) for all sizes > 32px. Never use Inter."
+    },
+    "body": {
+      "font_family": "IBM Plex Sans, sans-serif",
+      "weights": ["400", "500", "600"],
+      "usage": "Highly legible, slightly technical feel perfect for dashboards, data tables, and rich text editors."
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl tracking-tight text-slate-900 font-black",
+      "h2": "text-2xl sm:text-3xl tracking-tight text-slate-900 font-bold",
+      "h3": "text-xl sm:text-2xl text-slate-800 font-medium",
+      "body": "text-base leading-relaxed text-slate-700",
+      "labels": "text-xs tracking-[0.2em] uppercase font-semibold text-slate-500"
+    }
+  },
+  "colors": {
+    "backgrounds": {
+      "base": "#FFFFFF",
+      "surface": "#F8F9FA",
+      "sidebar": "#0F172A",
+      "ai_surface": "#FAFAFC"
+    },
+    "text": {
+      "primary": "#0A0A0A",
+      "secondary": "#475569",
+      "tertiary": "#94A3B8",
+      "inverse": "#FFFFFF"
+    },
+    "brand_and_accents": {
+      "primary_vibrant": "#0055FF",
+      "primary_hover": "#0044CC",
+      "ai_recording_live": "#FF3B30",
+      "success_deliberation": "#00C853",
+      "warning_pending": "#FFAB00"
+    },
+    "borders": {
+      "default": "#E2E8F0",
+      "focus": "#0055FF",
+      "ai_glow": "rgba(255, 59, 48, 0.4)"
+    }
+  },
+  "layout_and_spacing": {
+    "strategy": "The Control Room Grid. Every pixel is utilized. Density combined with clear hierarchical contrast.",
+    "dashboard_grid": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "meeting_conduction_layout": {
+      "description": "Split screen layout. Left: Sticky Agenda and active topics. Right: Live AI Transcription and Rich Text Editor. Top: Global sticky audio recording visualizer.",
+      "classes": "flex flex-col lg:flex-row h-screen overflow-hidden"
+    },
+    "spacing_scale": "Use generous internal padding for cards (p-6 or p-8) to prevent text collision with borders. Use margin bottom (mb-8) between major sections."
+  },
+  "surfaces_and_micro_themes": {
+    "dashboard_cards": "Flat background (bg-white), 1px solid border (border-slate-200), NO shadow by default. On hover: shadow-sm, -translate-y-0.5.",
+    "live_recording_header": "Glassmorphism: bg-white/80 backdrop-blur-xl border-b border-slate-200. Must feel like a premium command center.",
+    "active_ai_transcription_block": "The Tracing Beam approach: subtle blue or red animated left-border to indicate the AI is actively 'listening' and typing here.",
+    "buttons": "Sharp. rounded-md max. High contrast text. Focus rings must be 2px offset."
+  },
+  "components": {
+    "navigation": {
+      "type": "Collapsible Left Sidebar",
+      "style": "Dark mode sidebar (bg-slate-900) to contrast sharply with the white main dashboard area. High contrast text.",
+      "testid": "sidebar-nav"
+    },
+    "north_star_metrics": {
+      "description": "Top-left dashboard KPI cards. Massive typography for the number, tiny uppercase tracking for the label.",
+      "testid_pattern": "kpi-card-[metric-name]"
+    },
+    "meeting_creation_drag_drop": {
+      "description": "Agenda topics must support drag-and-drop. Use flat rectangular rows with a grip icon (Phosphor DotsSixVertical) on the left.",
+      "testid": "agenda-drag-drop-list"
+    },
+    "rich_text_editor": {
+      "description": "Word-like editor for the final 'Ata'. Clean toolbar top, document-style paper background in the center (shadow-sm, max-w-4xl mx-auto).",
+      "testid": "minutes-rich-text-editor"
+    },
+    "deliberations_panel": {
+      "description": "Dense data table. Use Shadcn Table. Status badges must use the vibrant colors (Success/Warning) with 10% opacity backgrounds.",
+      "testid": "deliberations-table"
+    }
+  },
+  "motion_and_interactions": {
+    "audio_visualizer": "Use framer-motion to create an animated, moving waveform when the 'Iniciar Gravação' button is active. Color: #FF3B30.",
+    "page_transitions": "Subtle fade and slide up (opacity: 0 to 1, y: 10 to 0) over 0.3s ease-out.",
+    "ai_typing_effect": "When generating the summary/minutes, use a staggered text reveal or a subtle blinking cursor to emphasize the AI at work."
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "style": "weight='regular' for standard UI, weight='fill' for active states or vibrant accents.",
+    "installation": "yarn add @phosphor-icons/react"
+  },
+  "media": {
+    "placeholders_forbidden": true,
+    "images": [
+      {
+        "category": "login_background",
+        "url": "https://images.pexels.com/photos/26754061/pexels-photo-26754061.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Abstract black and white skyscraper facade for a professional, corporate GovTech login screen background."
+      },
+      {
+        "category": "empty_state_meetings",
+        "url": "https://images.pexels.com/photos/8761299/pexels-photo-8761299.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Empty modern conference room. Use with 50% opacity in empty states when no meetings are scheduled."
+      },
+      {
+        "category": "default_organization_logo",
+        "url": "https://images.pexels.com/photos/6289038/pexels-photo-6289038.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Flat vector shield/badge to simulate an institutional brasão/logo for the watermark and header."
+      }
+    ]
+  },
+  "accessibility_and_testing": {
+    "contrast": "All text must pass WCAG AA. Vibrant buttons must have white text.",
+    "testing": "All interactive elements (buttons, inputs, menu items, table rows) MUST have a data-testid attribute formatted as kebab-case, describing the role."
+  },
+  "instructions_to_main_agent": [
+    "Do not use generic fonts like Inter. Import Cabinet Grotesk and IBM Plex Sans.",
+    "For the Meeting Conduction Flow, the UI must split into Agenda (left) and Live Transcription (right). The Audio Recorder must be a sticky glassmorphism header at the top.",
+    "Use Phosphor icons heavily in the dashboard sidebar and action buttons.",
+    "Do not use placeholder text for logos; use the provided default_organization_logo url.",
+    "Build the dashboard using the 'Control Room' grid layout: tight gaps, full pixel utilization, cards with 1px borders and no heavy shadows."
+  ]
+}
