@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: ata-sistema
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: MONGO_URL
+        sync: false          # preencher no dashboard
+      - key: DB_NAME
+        value: ata_db
+      - key: JWT_SECRET
+        generateValue: true  # gerado automaticamente
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_EXPIRY_HOURS
+        value: 72
+      - key: EMERGENT_LLM_KEY
+        sync: false          # preencher no dashboard
+      - key: CORS_ORIGINS
+        value: "*"

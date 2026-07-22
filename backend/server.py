@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -18,6 +18,11 @@ from datetime import datetime, timezone, timedelta
 
 from emergentintegrations.llm.openai import OpenAISpeechToText
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+from services.knowledge_extractor import extract_document_features
+from services.scoring_engine import score_meeting, detect_gaps
+from services.economic_data import get_economic_indicators, get_selic_history, get_ipca_history, generate_scenario_analysis
+import services.intelligent_agent as agent_svc
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -38,6 +43,8 @@ JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGORITHM = os.environ['JWT_ALGORITHM']
 JWT_EXPIRY_HOURS = int(os.environ['JWT_EXPIRY_HOURS'])
 EMERGENT_LLM_KEY = os.environ['EMERGENT_LLM_KEY']
+
+agent_svc.EMERGENT_LLM_KEY = EMERGENT_LLM_KEY
 
 app = FastAPI(title="Sistema de Atas de Reunião IA")
 api_router = APIRouter(prefix="/api")
@@ -144,7 +151,7 @@ class Meeting(BaseModel):
     president: str
     participants: List[Participant]
     agenda: List[AgendaTopic]
-    status: str = "scheduled"  # scheduled, in_progress, completed, approved
+    status: str = "scheduled"
     ata_content: str = ""
     executive_summary: str = ""
     next_agenda: str = ""
@@ -354,7 +361,6 @@ async def transcribe_topic(
     if len(audio_bytes) > 25 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Arquivo de áudio excede 25MB")
 
-    # Transcribe via Whisper
     stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
     audio_io = io.BytesIO(audio_bytes)
     audio_io.name = file.filename or "audio.webm"
@@ -370,7 +376,6 @@ async def transcribe_topic(
         logger.exception("Erro na transcrição")
         raise HTTPException(status_code=500, detail=f"Erro na transcrição: {e}")
 
-    # Append transcription to topic
     agenda = meeting.get("agenda", [])
     for t in agenda:
         if t["id"] == topic_id:
@@ -395,7 +400,6 @@ async def finalize_topic(meeting_id: str, topic_id: str, user=Depends(get_curren
 
     transcription = topic.get("transcription", "").strip()
     if not transcription:
-        # Allow finalization even without transcription (manual notes)
         transcription = topic.get("summary") or topic.get("title", "")
 
     prompt = f"""Você é um secretário especialista em atas de reuniões institucionais brasileiras.
@@ -438,7 +442,6 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
             "prazo": "Não definido",
         }
 
-    # Update topic
     agenda = meeting["agenda"]
     for t in agenda:
         if t["id"] == topic_id:
@@ -454,7 +457,6 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
         {"id": meeting_id}, {"$set": {"agenda": agenda, "updated_at": now_iso()}}
     )
 
-    # Persist deliberation if meaningful
     if data.get("deliberacao") and "sem deliberação" not in data["deliberacao"].lower():
         delib = {
             "id": str(uuid.uuid4()),
@@ -672,7 +674,7 @@ async def dashboard_stats(user=Depends(get_current_user)):
 
 
 # =========================
-# Templates (modelos de ata)
+# Templates
 # =========================
 DEFAULT_TEMPLATES = [
     {"id": "diretoria", "name": "Ata de Diretoria", "agenda": [
@@ -706,11 +708,327 @@ async def list_templates(user=Depends(get_current_user)):
 
 
 # =========================
-# Mount
+# Knowledge Base
+# =========================
+@api_router.post("/kb/upload")
+async def kb_upload(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Arquivo excede 20MB")
+
+    filename = file.filename or "document"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "txt"
+
+    text, metadata = extract_document_features(filename, ext, data)
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "filename": filename,
+        "filetype": ext,
+        "text": text,
+        "metadata": metadata,
+        "created_at": now_iso(),
+    }
+    existing = await db.knowledge_docs.find_one(
+        {"user_id": user["id"], "metadata.sha1": metadata["sha1"]}
+    )
+    if existing:
+        existing.pop("_id", None)
+        return existing
+
+    await db.knowledge_docs.insert_one(doc)
+    doc.pop("_id", None)
+    doc.pop("text", None)
+    return doc
+
+
+@api_router.get("/kb")
+async def kb_list(user=Depends(get_current_user)):
+    docs = await db.knowledge_docs.find(
+        {"user_id": user["id"]}, {"_id": 0, "text": 0}
+    ).sort("created_at", -1).to_list(200)
+    return docs
+
+
+@api_router.get("/kb/search")
+async def kb_search(q: str, user=Depends(get_current_user)):
+    if not q or len(q) < 2:
+        return []
+    docs = await db.knowledge_docs.find(
+        {
+            "user_id": user["id"],
+            "$or": [
+                {"filename": {"$regex": q, "$options": "i"}},
+                {"text": {"$regex": q, "$options": "i"}},
+            ],
+        },
+        {"_id": 0, "text": 0},
+    ).limit(20).to_list(20)
+    return docs
+
+
+@api_router.get("/kb/{doc_id}")
+async def kb_get(doc_id: str, user=Depends(get_current_user)):
+    doc = await db.knowledge_docs.find_one(
+        {"id": doc_id, "user_id": user["id"]}, {"_id": 0}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    doc.pop("text", None)
+    return doc
+
+
+@api_router.delete("/kb/{doc_id}")
+async def kb_delete(doc_id: str, user=Depends(get_current_user)):
+    await db.knowledge_docs.delete_one({"id": doc_id, "user_id": user["id"]})
+    return {"ok": True}
+
+
+# =========================
+# Intelligent Agent
+# =========================
+@api_router.post("/meetings/{meeting_id}/agent/run")
+async def agent_run(meeting_id: str, user=Depends(get_current_user)):
+    meeting = await db.meetings.find_one({"id": meeting_id, "user_id": user["id"]}, {"_id": 0})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada")
+
+    kb_docs = await db.knowledge_docs.find({"user_id": user["id"]}).to_list(50)
+    settings_doc = await db.admin_settings.find_one({"user_id": user["id"]}) or {}
+    settings_doc.pop("_id", None)
+
+    try:
+        result = await agent_svc.run_agent(
+            meeting=meeting,
+            kb_docs=kb_docs,
+            settings=settings_doc,
+            api_key=EMERGENT_LLM_KEY,
+        )
+    except Exception as e:
+        logger.exception("Agent run error")
+        raise HTTPException(status_code=500, detail=f"Erro no agente: {e}")
+
+    await db.agent_changes.delete_many({"meeting_id": meeting_id})
+    if result["changes"]:
+        for ch in result["changes"]:
+            ch["user_id"] = user["id"]
+        await db.agent_changes.insert_many([dict(c) for c in result["changes"]])
+
+    result.pop("changes", None)
+    result["changes_count"] = result.get("changes_count", 0)
+    return result
+
+
+@api_router.get("/meetings/{meeting_id}/agent/changes")
+async def agent_changes(meeting_id: str, user=Depends(get_current_user)):
+    docs = await db.agent_changes.find(
+        {"meeting_id": meeting_id, "user_id": user["id"]}, {"_id": 0}
+    ).to_list(100)
+    return docs
+
+
+@api_router.get("/meetings/{meeting_id}/agent/pending")
+async def agent_pending(meeting_id: str, user=Depends(get_current_user)):
+    docs = await db.agent_changes.find(
+        {"meeting_id": meeting_id, "user_id": user["id"], "status": "pending"}, {"_id": 0}
+    ).to_list(100)
+    return docs
+
+
+class AgentFeedback(BaseModel):
+    change_id: str
+    accepted: bool
+    note: str = ""
+
+
+@api_router.post("/meetings/{meeting_id}/agent/feedback")
+async def agent_feedback(
+    meeting_id: str,
+    payload: AgentFeedback,
+    user=Depends(get_current_user),
+):
+    change = await db.agent_changes.find_one(
+        {"id": payload.change_id, "meeting_id": meeting_id, "user_id": user["id"]}
+    )
+    if not change:
+        raise HTTPException(status_code=404, detail="Alteração não encontrada")
+
+    change = agent_svc.record_feedback(change, payload.accepted, payload.note)
+
+    if payload.accepted:
+        meeting = await db.meetings.find_one({"id": meeting_id, "user_id": user["id"]}, {"_id": 0})
+        if meeting:
+            meeting = agent_svc.apply_change_to_meeting(meeting, change)
+            await db.meetings.update_one(
+                {"id": meeting_id},
+                {"$set": {"ata_content": meeting.get("ata_content", ""), "agenda": meeting.get("agenda", []), "updated_at": now_iso()}},
+            )
+
+    await db.agent_changes.update_one(
+        {"id": payload.change_id},
+        {"$set": {"status": change["status"], "feedback_at": change.get("feedback_at"), "user_note": change.get("user_note", "")}},
+    )
+    return {"ok": True, "status": change["status"]}
+
+
+@api_router.get("/agent/profile")
+async def agent_profile(user=Depends(get_current_user)):
+    accepted = await db.agent_changes.count_documents({"user_id": user["id"], "status": "accepted"})
+    rejected = await db.agent_changes.count_documents({"user_id": user["id"], "status": "rejected"})
+    total = accepted + rejected
+    kb_count = await db.knowledge_docs.count_documents({"user_id": user["id"]})
+    acceptance_rate = round(accepted / total * 100) if total > 0 else 0
+    maturity = "alta" if total > 50 else ("média" if total > 10 else "baixa")
+    return {
+        "total_feedbacks": total,
+        "accepted_changes": accepted,
+        "rejected_changes": rejected,
+        "acceptance_rate": acceptance_rate,
+        "kb_documents": kb_count,
+        "maturity": maturity,
+        "learning_active": kb_count > 0 or total > 0,
+    }
+
+
+# =========================
+# Economic Data
+# =========================
+@api_router.get("/economicos")
+async def economic_data(user=Depends(get_current_user)):
+    indicators = await get_economic_indicators()
+    selic = indicators.get("selic", {}).get("value", 13.75)
+    ipca = indicators.get("ipca", {}).get("value", 4.83)
+    scenario = generate_scenario_analysis(selic, ipca)
+    return {**indicators, "scenario": scenario}
+
+
+@api_router.get("/economicos/historico/selic")
+async def selic_history(months: int = 12, user=Depends(get_current_user)):
+    return await get_selic_history(months)
+
+
+@api_router.get("/economicos/historico/ipca")
+async def ipca_history(months: int = 12, user=Depends(get_current_user)):
+    return await get_ipca_history(months)
+
+
+# =========================
+# Admin Settings
+# =========================
+@api_router.get("/admin/settings")
+async def get_admin_settings(user=Depends(get_current_user)):
+    doc = await db.admin_settings.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not doc:
+        return {
+            "user_id": user["id"],
+            "institution_name": user.get("institution", ""),
+            "ata_style": "rpps_padrao",
+            "formal_markers": [],
+            "custom_opening": "",
+            "custom_closing": "",
+            "logo_url": "",
+            "brasao_url": "",
+            "default_president": "",
+            "default_secretary": "",
+        }
+    return doc
+
+
+class AdminSettings(BaseModel):
+    institution_name: Optional[str] = None
+    ata_style: Optional[str] = None
+    formal_markers: Optional[List[str]] = None
+    custom_opening: Optional[str] = None
+    custom_closing: Optional[str] = None
+    logo_url: Optional[str] = None
+    brasao_url: Optional[str] = None
+    default_president: Optional[str] = None
+    default_secretary: Optional[str] = None
+
+
+@api_router.put("/admin/settings")
+async def update_admin_settings(payload: AdminSettings, user=Depends(get_current_user)):
+    update = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    update["user_id"] = user["id"]
+    update["updated_at"] = now_iso()
+    await db.admin_settings.update_one(
+        {"user_id": user["id"]}, {"$set": update}, upsert=True
+    )
+    doc = await db.admin_settings.find_one({"user_id": user["id"]}, {"_id": 0})
+    return doc
+
+
+@api_router.get("/admin/users")
+async def list_users(user=Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    docs = await db.users.find({}, {"_id": 0, "password": 0}).to_list(200)
+    return docs
+
+
+class AdminUserCreate(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    institution: Optional[str] = ""
+    role: Optional[str] = "user"
+
+
+@api_router.post("/admin/users")
+async def create_user(payload: AdminUserCreate, user=Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    existing = await db.users.find_one({"email": payload.email.lower()})
+    if existing:
+        raise HTTPException(status_code=400, detail="E-mail já cadastrado")
+    new_user = {
+        "id": str(uuid.uuid4()),
+        "name": payload.name,
+        "email": payload.email.lower(),
+        "password": hash_pw(payload.password),
+        "institution": payload.institution or "",
+        "role": payload.role or "user",
+        "created_at": now_iso(),
+    }
+    await db.users.insert_one(new_user)
+    new_user.pop("password")
+    new_user.pop("_id", None)
+    return new_user
+
+
+@api_router.delete("/admin/users/{target_id}")
+async def delete_user(target_id: str, user=Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    if target_id == user["id"]:
+        raise HTTPException(status_code=400, detail="Não é possível excluir o próprio usuário")
+    await db.users.delete_one({"id": target_id})
+    return {"ok": True}
+
+
+# =========================
+# Quality Scoring
+# =========================
+@api_router.get("/meetings/{meeting_id}/quality")
+async def meeting_quality(meeting_id: str, user=Depends(get_current_user)):
+    meeting = await db.meetings.find_one({"id": meeting_id, "user_id": user["id"]}, {"_id": 0})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada")
+    scores = score_meeting(meeting)
+    gaps = detect_gaps(meeting)
+    return {"scores": scores, "gaps": gaps}
+
+
+# =========================
+# Mount router + middleware
 # =========================
 @api_router.get("/")
 async def root():
-    return {"app": "Sistema de Atas IA", "version": "1.0"}
+    return {"app": "Sistema de Atas IA", "version": "2.0"}
 
 
 app.include_router(api_router)
@@ -727,3 +1045,16 @@ app.add_middleware(
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+
+# =========================
+# SPA — serve React build
+# =========================
+_static = ROOT_DIR / "static"
+if _static.is_dir():
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def _serve_spa(full_path: str):
+        f = _static / full_path
+        if f.is_file():
+            return FileResponse(f)
+        return FileResponse(_static / "index.html")
