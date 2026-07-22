@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -44,7 +44,6 @@ JWT_ALGORITHM = os.environ['JWT_ALGORITHM']
 JWT_EXPIRY_HOURS = int(os.environ['JWT_EXPIRY_HOURS'])
 EMERGENT_LLM_KEY = os.environ['EMERGENT_LLM_KEY']
 
-# Inject API key into agent service
 agent_svc.EMERGENT_LLM_KEY = EMERGENT_LLM_KEY
 
 app = FastAPI(title="Sistema de Atas de Reunião IA")
@@ -152,7 +151,7 @@ class Meeting(BaseModel):
     president: str
     participants: List[Participant]
     agenda: List[AgendaTopic]
-    status: str = "scheduled"  # scheduled, in_progress, completed, approved
+    status: str = "scheduled"
     ata_content: str = ""
     executive_summary: str = ""
     next_agenda: str = ""
@@ -362,7 +361,6 @@ async def transcribe_topic(
     if len(audio_bytes) > 25 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Arquivo de áudio excede 25MB")
 
-    # Transcribe via Whisper
     stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
     audio_io = io.BytesIO(audio_bytes)
     audio_io.name = file.filename or "audio.webm"
@@ -378,7 +376,6 @@ async def transcribe_topic(
         logger.exception("Erro na transcrição")
         raise HTTPException(status_code=500, detail=f"Erro na transcrição: {e}")
 
-    # Append transcription to topic
     agenda = meeting.get("agenda", [])
     for t in agenda:
         if t["id"] == topic_id:
@@ -403,7 +400,6 @@ async def finalize_topic(meeting_id: str, topic_id: str, user=Depends(get_curren
 
     transcription = topic.get("transcription", "").strip()
     if not transcription:
-        # Allow finalization even without transcription (manual notes)
         transcription = topic.get("summary") or topic.get("title", "")
 
     prompt = f"""Você é um secretário especialista em atas de reuniões institucionais brasileiras.
@@ -446,7 +442,6 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
             "prazo": "Não definido",
         }
 
-    # Update topic
     agenda = meeting["agenda"]
     for t in agenda:
         if t["id"] == topic_id:
@@ -462,7 +457,6 @@ Responda APENAS com o JSON, sem markdown ou explicações."""
         {"id": meeting_id}, {"$set": {"agenda": agenda, "updated_at": now_iso()}}
     )
 
-    # Persist deliberation if meaningful
     if data.get("deliberacao") and "sem deliberação" not in data["deliberacao"].lower():
         delib = {
             "id": str(uuid.uuid4()),
@@ -680,7 +674,7 @@ async def dashboard_stats(user=Depends(get_current_user)):
 
 
 # =========================
-# Templates (modelos de ata)
+# Templates
 # =========================
 DEFAULT_TEMPLATES = [
     {"id": "diretoria", "name": "Ata de Diretoria", "agenda": [
@@ -739,7 +733,6 @@ async def kb_upload(
         "metadata": metadata,
         "created_at": now_iso(),
     }
-    # Deduplicate by sha1 per user
     existing = await db.knowledge_docs.find_one(
         {"user_id": user["id"], "metadata.sha1": metadata["sha1"]}
     )
@@ -749,7 +742,7 @@ async def kb_upload(
 
     await db.knowledge_docs.insert_one(doc)
     doc.pop("_id", None)
-    doc.pop("text", None)  # Don't return full text
+    doc.pop("text", None)
     return doc
 
 
@@ -819,14 +812,13 @@ async def agent_run(meeting_id: str, user=Depends(get_current_user)):
         logger.exception("Agent run error")
         raise HTTPException(status_code=500, detail=f"Erro no agente: {e}")
 
-    # Persist change proposals
     await db.agent_changes.delete_many({"meeting_id": meeting_id})
     if result["changes"]:
         for ch in result["changes"]:
             ch["user_id"] = user["id"]
         await db.agent_changes.insert_many([dict(c) for c in result["changes"]])
 
-    result.pop("changes", None)  # Return summary; changes fetched separately
+    result.pop("changes", None)
     result["changes_count"] = result.get("changes_count", 0)
     return result
 
@@ -868,7 +860,6 @@ async def agent_feedback(
     change = agent_svc.record_feedback(change, payload.accepted, payload.note)
 
     if payload.accepted:
-        # Apply change to the meeting
         meeting = await db.meetings.find_one({"id": meeting_id, "user_id": user["id"]}, {"_id": 0})
         if meeting:
             meeting = agent_svc.apply_change_to_meeting(meeting, change)
@@ -886,15 +877,12 @@ async def agent_feedback(
 
 @api_router.get("/agent/profile")
 async def agent_profile(user=Depends(get_current_user)):
-    """Return institutional DNA profile derived from accepted changes."""
     accepted = await db.agent_changes.count_documents({"user_id": user["id"], "status": "accepted"})
     rejected = await db.agent_changes.count_documents({"user_id": user["id"], "status": "rejected"})
     total = accepted + rejected
     kb_count = await db.knowledge_docs.count_documents({"user_id": user["id"]})
-
     acceptance_rate = round(accepted / total * 100) if total > 0 else 0
     maturity = "alta" if total > 50 else ("média" if total > 10 else "baixa")
-
     return {
         "total_feedbacks": total,
         "accepted_changes": accepted,
@@ -1023,7 +1011,7 @@ async def delete_user(target_id: str, user=Depends(get_current_user)):
 
 
 # =========================
-# Quality Scoring (standalone)
+# Quality Scoring
 # =========================
 @api_router.get("/meetings/{meeting_id}/quality")
 async def meeting_quality(meeting_id: str, user=Depends(get_current_user)):
@@ -1036,7 +1024,7 @@ async def meeting_quality(meeting_id: str, user=Depends(get_current_user)):
 
 
 # =========================
-# Mount
+# Mount router + middleware
 # =========================
 @api_router.get("/")
 async def root():
@@ -1057,3 +1045,16 @@ app.add_middleware(
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+
+# =========================
+# SPA — serve React build
+# =========================
+_static = ROOT_DIR / "static"
+if _static.is_dir():
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def _serve_spa(full_path: str):
+        f = _static / full_path
+        if f.is_file():
+            return FileResponse(f)
+        return FileResponse(_static / "index.html")

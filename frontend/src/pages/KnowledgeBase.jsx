@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
+import { api } from "@/lib/api";
 import {
   CloudArrowUp,
   MagnifyingGlass,
@@ -14,13 +14,6 @@ import {
   Database,
   WarningCircle,
 } from "@phosphor-icons/react";
-
-const API = process.env.REACT_APP_BACKEND_URL || "";
-
-function authHeader() {
-  const token = localStorage.getItem("token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 function FileIcon({ filetype }) {
   const cls = "w-8 h-8";
@@ -159,18 +152,14 @@ export default function KnowledgeBase() {
   const { data: docs = [], isLoading } = useQuery({
     queryKey: ["kb", search],
     queryFn: async () => {
-      const url = search.length >= 2
-        ? `${API}/api/kb/search?q=${encodeURIComponent(search)}`
-        : `${API}/api/kb`;
-      const r = await axios.get(url, { headers: authHeader() });
+      const url = search.length >= 2 ? `/kb/search?q=${encodeURIComponent(search)}` : "/kb";
+      const r = await api.get(url);
       return r.data;
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id) => {
-      await axios.delete(`${API}/api/kb/${id}`, { headers: authHeader() });
-    },
+    mutationFn: async (id) => { await api.delete(`/kb/${id}`); },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["kb"] }),
   });
 
@@ -179,9 +168,7 @@ export default function KnowledgeBase() {
     const form = new FormData();
     form.append("file", file);
     try {
-      await axios.post(`${API}/api/kb/upload`, form, {
-        headers: { ...authHeader(), "Content-Type": "multipart/form-data" },
-      });
+      await api.post("/kb/upload", form, { headers: { "Content-Type": "multipart/form-data" } });
       qc.invalidateQueries({ queryKey: ["kb"] });
     } catch (err) {
       setUploadErrors((prev) => [...prev, `Erro ao carregar "${file.name}": ${err.response?.data?.detail || err.message}`]);
@@ -192,7 +179,6 @@ export default function KnowledgeBase() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] p-8 fade-up">
-      {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-10 h-10 rounded-xl bg-[#0055FF]/10 flex items-center justify-center">
@@ -203,35 +189,27 @@ export default function KnowledgeBase() {
             <h1 className="text-2xl font-bold text-slate-800">Base de Conhecimento</h1>
           </div>
         </div>
-        <p className="text-slate-500 text-sm mt-2 ml-13">
+        <p className="text-slate-500 text-sm mt-2">
           Carregue atas, resoluções e documentos institucionais. O agente IA aprende com eles para gerar atas mais fiéis ao seu padrão.
         </p>
       </div>
 
-      {/* Upload zone */}
       <div className="mb-6">
         <UploadZone onUpload={handleUpload} uploading={uploading} />
       </div>
 
-      {/* Upload errors */}
       {uploadErrors.length > 0 && (
         <div className="mb-4 space-y-2">
           {uploadErrors.map((e, i) => (
             <div key={i} className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3">
               <WarningCircle className="w-4 h-4 flex-shrink-0" />
               <span>{e}</span>
-              <button
-                onClick={() => setUploadErrors((prev) => prev.filter((_, j) => j !== i))}
-                className="ml-auto text-red-400 hover:text-red-600"
-              >
-                ×
-              </button>
+              <button onClick={() => setUploadErrors((prev) => prev.filter((_, j) => j !== i))} className="ml-auto text-red-400 hover:text-red-600">×</button>
             </div>
           ))}
         </div>
       )}
 
-      {/* Search bar */}
       <div className="relative mb-6">
         <MagnifyingGlass className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
         <input
@@ -243,7 +221,6 @@ export default function KnowledgeBase() {
         />
       </div>
 
-      {/* Stats bar */}
       <div className="flex items-center gap-6 mb-6 text-sm">
         <span className="text-slate-500">
           <span className="font-semibold text-slate-800">{docs.length}</span> documento{docs.length !== 1 ? "s" : ""}
@@ -257,7 +234,6 @@ export default function KnowledgeBase() {
         )}
       </div>
 
-      {/* Doc grid */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {[...Array(6)].map((_, i) => (
@@ -281,11 +257,7 @@ export default function KnowledgeBase() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {docs.map((doc) => (
-            <DocCard
-              key={doc.id}
-              doc={doc}
-              onDelete={(id) => deleteMutation.mutate(id)}
-            />
+            <DocCard key={doc.id} doc={doc} onDelete={(id) => deleteMutation.mutate(id)} />
           ))}
         </div>
       )}

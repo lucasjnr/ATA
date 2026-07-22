@@ -1,41 +1,21 @@
 services:
-  # ── Backend (FastAPI) ─────────────────────────────────────────────────
   - type: web
-    name: ata-backend
+    name: ata-sistema
     runtime: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    buildCommand: "cd frontend && yarn install && yarn build && cp -r build ../backend/static && cd ../backend && pip install -r requirements.txt"
+    startCommand: "cd backend && uvicorn server:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: MONGO_URL
-        sync: false          # preencher manualmente no dashboard
+        sync: false          # preencher no dashboard
       - key: DB_NAME
         value: ata_db
       - key: JWT_SECRET
-        generateValue: true  # gerado automaticamente pelo Render
+        generateValue: true  # gerado automaticamente
       - key: JWT_ALGORITHM
         value: HS256
       - key: JWT_EXPIRY_HOURS
         value: 72
       - key: EMERGENT_LLM_KEY
-        sync: false          # preencher manualmente no dashboard
+        sync: false          # preencher no dashboard
       - key: CORS_ORIGINS
         value: "*"
-
-  # ── Frontend (React static site) ──────────────────────────────────────
-  - type: web
-    name: ata-frontend
-    runtime: static
-    rootDir: frontend
-    buildCommand: yarn install && yarn build
-    staticPublishPath: build
-    envVars:
-      - key: REACT_APP_BACKEND_URL
-        fromService:
-          type: web
-          name: ata-backend
-          property: hostWithScheme
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
