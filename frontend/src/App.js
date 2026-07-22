@@ -10,6 +10,8 @@ import MeetingDetail from "@/pages/MeetingDetail";
 import ConductMeeting from "@/pages/ConductMeeting";
 import AtaEditor from "@/pages/AtaEditor";
 import Deliberations from "@/pages/Deliberations";
+import KnowledgeBase from "@/pages/KnowledgeBase";
+import AdminSettings from "@/pages/AdminSettings";
 import Layout from "@/components/Layout";
 
 function Protected({ children }) {
@@ -43,6 +45,8 @@ function App() {
             <Route path="/meetings/:id/conduct" element={<Protected><ConductMeeting /></Protected>} />
             <Route path="/meetings/:id/ata" element={<Protected><AtaEditor /></Protected>} />
             <Route path="/deliberations" element={<Protected><Deliberations /></Protected>} />
+            <Route path="/kb" element={<Protected><KnowledgeBase /></Protected>} />
+            <Route path="/admin" element={<Protected><AdminSettings /></Protected>} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

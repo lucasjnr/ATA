@@ -7,13 +7,15 @@ import {
   SignOut,
   WaveSawtooth,
   GearSix,
-  ChartBar,
+  Database,
 } from "@phosphor-icons/react";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: House, testid: "nav-dashboard" },
   { to: "/meetings/new", label: "Nova Reunião", icon: CalendarPlus, testid: "nav-new-meeting" },
   { to: "/deliberations", label: "Deliberações", icon: ListChecks, testid: "nav-deliberations" },
+  { to: "/kb", label: "Base de Conhecimento", icon: Database, testid: "nav-kb" },
+  { to: "/admin", label: "Administração", icon: GearSix, testid: "nav-admin" },
 ];
 
 function Avatar({ name }) {

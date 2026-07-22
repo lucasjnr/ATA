@@ -15,8 +15,8 @@ import {
   FileText,
   Lightning,
   ArrowUpRight,
-  DotsThree,
-  Timer,
+  TrendUp,
+  TrendDown,
 } from "@phosphor-icons/react";
 
 const STATUS_LABELS = {
@@ -77,6 +77,65 @@ function KpiCard({ label, value, icon: Icon, gradient, iconColor, testid }) {
       <div className="font-display font-black text-5xl tracking-tight text-slate-900 relative">
         {count}
       </div>
+    </div>
+  );
+}
+
+function EcoIndicator({ label, value, unit, change_pct }) {
+  const positive = change_pct == null || change_pct >= 0;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] text-white/40 uppercase tracking-widest">{label}</span>
+      <span className="font-bold text-white text-sm">
+        {unit === "R$" ? `${unit} ` : ""}{typeof value === "number" ? value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+        {unit !== "R$" ? <span className="text-white/50 font-normal text-xs ml-0.5">{unit}</span> : null}
+      </span>
+      {change_pct != null && (
+        <span className={`text-[10px] flex items-center gap-0.5 ${positive ? "text-emerald-400" : "text-red-400"}`}>
+          {positive ? <TrendUp className="w-3 h-3" /> : <TrendDown className="w-3 h-3" />}
+          {positive ? "+" : ""}{change_pct.toFixed(2)}%
+        </span>
+      )}
+    </div>
+  );
+}
+
+function EcoBar() {
+  const [eco, setEco] = useState(null);
+  useEffect(() => {
+    api.get("/economicos").then((r) => setEco(r.data)).catch(() => {});
+  }, []);
+
+  if (!eco) return null;
+
+  const indicators = [
+    { label: "SELIC", value: eco.selic?.value, unit: eco.selic?.unit },
+    { label: "IPCA 12m", value: eco.ipca?.value, unit: eco.ipca?.unit },
+    { label: "Dólar", value: eco.dolar?.value, unit: eco.dolar?.unit },
+    { label: "CDI", value: eco.cdi?.value, unit: eco.cdi?.unit },
+    { label: "Ibovespa", value: eco.ibovespa?.value, unit: "pts", change_pct: eco.ibovespa?.change_pct },
+  ];
+
+  return (
+    <div
+      className="rounded-2xl px-6 py-4 mb-6 flex items-center gap-8 flex-wrap fade-up-delay-1"
+      style={{ background: "linear-gradient(135deg, #0B1628, #0F2040)" }}
+    >
+      <div>
+        <p className="text-[9px] uppercase tracking-[0.25em] text-white/30 font-bold">Indicadores Macro</p>
+        <p className="text-[10px] text-white/25 mt-0.5">BCB · {new Date().toLocaleDateString("pt-BR")}</p>
+      </div>
+      <div className="flex-1 flex items-center gap-8 flex-wrap">
+        {indicators.map((ind) => (
+          <EcoIndicator key={ind.label} {...ind} />
+        ))}
+      </div>
+      {eco.scenario && (
+        <div className="hidden xl:block max-w-xs">
+          <p className="text-[10px] text-white/30 mb-0.5">Cenário</p>
+          <p className="text-[11px] text-white/60 leading-relaxed line-clamp-2">{eco.scenario.guidance}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -192,6 +251,9 @@ export default function Dashboard() {
           />
         </div>
       </div>
+
+      {/* ── Economic indicators bar ── */}
+      <EcoBar />
 
       {/* ── Search ── */}
       <div className="mb-6 fade-up-delay-2">
