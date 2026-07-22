@@ -14,7 +14,16 @@ import Layout from "@/components/Layout";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-500">Carregando…</div>;
+  if (loading) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#0B1628] gap-4">
+      <div className="w-10 h-10 bg-[#0055FF] rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30 animate-pulse">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+          <path d="M2 13h4v-3H2v3zm0 4h4v-3H2v3zm0-8h4V6H2v3zm5 4h14v-3H7v3zm0 4h14v-3H7v3zM7 6v3h14V6H7z"/>
+        </svg>
+      </div>
+      <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+    </div>
+  );
   if (!user) return <Navigate to="/login" replace />;
   return <Layout>{children}</Layout>;
 }
